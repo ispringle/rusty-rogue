@@ -1,0 +1,8 @@
+[package]
+name = "roguelike"
+version = "0.1.0"
+authors = ["Ian S Pringle <ipringle@protonmail.com>"]
+edition = "2018"
+
+[dependencies]
+tcod = "0.13"
