@@ -45,15 +45,16 @@ type Map = Vec<Vec<Tile>>;
 struct Tile {
     blocked: bool,
     block_sight: bool,
+    explored: bool,
 }
 
 impl Tile {
     pub fn empty() -> Self {
-        Tile{blocked: false, block_sight: false}
+        Tile{blocked: false, block_sight: false, explored: false}
     }
 
     pub fn wall() -> Self {
-        Tile{blocked: true, block_sight: true}
+        Tile{blocked: true, block_sight: true, explored: false}
     }
 }
 
@@ -179,7 +180,7 @@ fn make_map() -> (Map, (i32, i32)) {
 }
 
 fn render_all(root: &mut Root, con: &mut Offscreen, objects: &[Object],
-              map: &Map, fov_map: &mut FovMap, fov_recompute: bool) {
+              map: &mut Map, fov_map: &mut FovMap, fov_recompute: bool) {
     if fov_recompute {
         let player = &objects[0];
         fov_map.compute_fov(player.x, player.y, TORCH_RADIUS, FOV_LIGHT_WALLS, FOV_ALGO);
@@ -195,7 +196,13 @@ fn render_all(root: &mut Root, con: &mut Offscreen, objects: &[Object],
                 (true, true) => COLOR_LIGHT_WALL,
                 (true, false) => COLOR_LIGHT_GROUND,
             };
-            con.set_char_background(x, y, color, BackgroundFlag::Set);
+            let explored = &mut map[x as usize][y as usize].explored;
+            if visible {
+                *explored = true;
+            }
+            if *explored {
+                con.set_char_background(x, y, color, BackgroundFlag::Set);
+            }
         }
     }
 
@@ -250,7 +257,7 @@ fn main() {
 
     tcod::system::set_fps(LIMIT_FPS);
 
-    let (map, (player_x, player_y)) = make_map();
+    let (mut map, (player_x, player_y)) = make_map();
 
     let mut fov_map = FovMap::new(MAP_WIDTH, MAP_HEIGHT);
     for y in 0..MAP_HEIGHT {
@@ -270,7 +277,7 @@ fn main() {
 
     while !root.window_closed() {
         let fov_recompute = previous_player_position != (objects[0].x, objects[0].y);
-        render_all(&mut root, &mut con, &objects, &map, &mut fov_map, fov_recompute);
+        render_all(&mut root, &mut con, &objects, &mut map, &mut fov_map, fov_recompute);
 
         root.flush();
 
