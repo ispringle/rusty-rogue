@@ -11,6 +11,7 @@ use rand::Rng;
 use tcod::console::*;
 use tcod::colors::{self, Color};
 use tcod::map::{Map as FovMap, FovAlgorithm};
+use tcod::input::{self, Event, Key, Mouse};
 
 //CONSTANTS
 
@@ -281,7 +282,7 @@ fn make_map(objects: &mut Vec<Object>) -> Map {
 
 fn render_all(root: &mut Root, con: &mut Offscreen, objects: &[Object],
               map: &mut Map, fov_map: &mut FovMap, fov_recompute: bool, 
-              panel: &mut Offscreen, messages: &Messages)
+              panel: &mut Offscreen, messages: &Messages, mouse: Mouse)
 {
     if fov_recompute {
         let player = &objects[PLAYER];
@@ -314,6 +315,7 @@ fn render_all(root: &mut Root, con: &mut Offscreen, objects: &[Object],
     for object in &to_draw {
         object.draw(con);
         }
+
     blit(con, (0, 0), (MAP_WIDTH, MAP_HEIGHT), root, (0, 0), 1.0, 1.0);
 
     panel.set_default_background(colors::BLACK);
@@ -321,6 +323,10 @@ fn render_all(root: &mut Root, con: &mut Offscreen, objects: &[Object],
     let hp = objects[PLAYER].fighter.map_or(0, |f| f.hp);
     let max_hp = objects[PLAYER].fighter.map_or(0, |f| f.max_hp);
     render_bar(panel, 1, 1, BAR_WIDTH, "HP", hp, max_hp, colors::LIGHT_RED, colors::DARKER_RED);
+
+    panel.set_default_foreground(colors::LIGHT_GREY);
+    panel.print_ex(1, 0, BackgroundFlag::None, TextAlignment::Left,
+                   get_names_under_mouse(mouse, objects, fov_map));
 
     let mut y = MSG_HEIGHT as i32;
     for &(ref msg, color) in messages.iter().rev() {
@@ -355,12 +361,12 @@ fn player_move_or_attack(dx: i32, dy: i32, map: &Map, objects: &mut [Object], me
     }
 }
 
-fn handle_keys(root: &mut Root, objects: &mut [Object], map: &Map, messages: &mut Messages) -> PlayerAction {
-    use tcod::input::Key;
+fn handle_keys(key: Key, root: &mut Root, objects: &mut [Object],
+               map: &Map, messages: &mut Messages) -> PlayerAction 
+{
     use tcod::input::KeyCode::*;
     use PlayerAction::*;
 
-    let key = root.wait_for_keypress(true);
     let player_alive = objects[PLAYER].alive;
     match (key, player_alive) {
         //movement keys
@@ -511,6 +517,18 @@ fn message<T: Into<String>>(messages: &mut Messages, message: T, color: Color) {
     messages.push((message.into(), color));
 }
 
+fn get_names_under_mouse(mouse: Mouse, objects: &[Object], fov_map: &FovMap) -> String {
+    let (x, y) = (mouse.cx as i32, mouse.cy as i32);
+
+    let names = objects
+        .iter()
+        .filter(|obj| {obj.pos() == (x, y) && fov_map.is_in_fov(obj.x, obj.y)})
+        .map(|obj| obj.name.clone())
+        .collect::<Vec<_>>();
+
+    names.join(", ")
+}
+
 fn main() {
     let mut root = Root::initializer()
         .font("static/arial10x10.png", FontLayout::Tcod)
@@ -550,16 +568,25 @@ fn main() {
     while !root.window_closed() {
         con.clear();
 
+        let mut mouse = Default::default();
+        let mut key = Default::default();
+
+        match input::check_for_event(input::MOUSE | input::KEY_PRESS) {
+            Some((_, Event::Mouse(m))) => mouse = m,
+            Some((_, Event::Key(k))) => key = k,
+            _ => Default::default(),
+        }
+
         let fov_recompute = previous_player_position != objects[PLAYER].pos();
         render_all(&mut root, &mut con, &objects, &mut map,
                    &mut fov_map, fov_recompute, &mut panel,
-                   &messages);
+                   &messages, mouse);
 
         root.flush();
 
         let player = &mut objects[PLAYER];
         previous_player_position = (player.x, player.y);
-        let player_action = handle_keys(&mut root, &mut objects, &map, &mut messages);
+        let player_action = handle_keys(key, &mut root, &mut objects, &map, &mut messages);
         if player_action == PlayerAction::Exit {
             break
         }
