@@ -528,8 +528,8 @@ fn place_objects(room: Rect, objects: &mut Vec<Object>, map: &Map) {
                 let mut object = Object::new(x, y, '#', "scroll of lightning", colors::LIGHT_YELLOW, false);
                 object.item = Some(Item::Lightning);
                 object
-            } else if dice < 0.7 + 0.10 {
-                let mut object = Object::new(x, y, '#', "scroll of confusedion",
+            } else if dice < 0.7 + 0.10 + 0.10 {
+                let mut object = Object::new(x, y, '#', "scroll of confusion",
                                              colors::LIGHT_PURPLE, false);
                 object.item = Some(Item::Confuse);
                 object
@@ -826,10 +826,12 @@ fn cast_lightning(_inventory_id: usize, objects: &mut [Object], messages: &mut M
 }
 
 fn cast_confuse(_inventory_id: usize, objects: &mut [Object], messages: &mut Messages,
-                  _map: &mut Map, tcod: &mut Tcod)
+                  map: &mut Map, tcod: &mut Tcod)
                   -> UseResult
 {
-    let monster_id = closest_monster(CONFUSE_RANGE, objects, tcod);
+    message(messages, "Left-click a monster to confuse it, or right-click to cancel.",
+            colors::LIGHT_CYAN);
+    let monster_id = target_monster(tcod, objects, map, messages, Some(CONFUSE_RANGE as f32));
     if let Some(monster_id) = monster_id {
         let old_ai = objects[monster_id].ai.take().unwrap_or(Ai::Basic);
         objects[monster_id].ai = Some(Ai::Confused {
@@ -837,7 +839,7 @@ fn cast_confuse(_inventory_id: usize, objects: &mut [Object], messages: &mut Mes
             num_turns: CONFUSE_NUM_TURNS,
         });
         message(messages,
-                format!("The {} is no confused!", objects[monster_id].name),
+                format!("The {} is now confused!", objects[monster_id].name),
                 colors::LIGHT_GREEN);
         UseResult::UsedUp
     } else {
