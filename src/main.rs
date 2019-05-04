@@ -204,6 +204,10 @@ impl Object {
             }
         }
     }
+
+    pub fn distance(&self, x: i32, y: i32) -> f32 {
+        (((x - self.x).pow(2) + (y - self.y).pow(2)) as f32).sqrt()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -821,6 +825,37 @@ fn cast_confuse(_inventory_id: usize, objects: &mut [Object], messages: &mut Mes
     }
 }
 
+fn target_tile(tcod: &mut Tcod, objects: &[Object],
+               map: &mut Map, messages: &Messages,
+               max_range: Option<f32>) -> Option<(i32, i32)>
+{
+    use tcod::input::KeyCode::Escape;
+    loop {
+        tcod.root.flush();
+        let event = input::check_for_event(input::KEY_PRESS | input::MOUSE)
+            .map(|e| e.1);
+        let mut key = None;
+        match event {
+            Some(Event::Mouse(m)) => tcod.mouse = m,
+            Some(Event::Key(k)) => key = Some(k),
+            None => {}
+        }
+        render_all(tcod, objects, map, messages, false);
+        let (x, y) = (tcod.mouse.cx as i32, tcod.mouse.cy as i32);
+
+        let in_fov = (x < MAP_WIDTH) && (y < MAP_HEIGHT) && tcod.fov.is_in_fov(x, y);
+        let in_range = max_range.map_or(
+            true, |range| objects[PLAYER].distance(x, y) <= range);
+        if tcod.mouse.lbutton_pressed && in_fov && in_range {
+            return Some((x, y))
+        }
+
+        let escape = key.map_or(false, |k| k.code == Escape);
+        if tcod.mouse.rbutton_pressed || escape {
+            return None
+        }
+    }
+}
 
 fn main() {
     let root = Root::initializer()
