@@ -461,6 +461,18 @@ fn handle_keys(key: Key, tcod: &mut Tcod, objects: &mut Vec<Object>,
             DidntTakeTurn
         }
 
+        //drop item
+        (Key { printable: 'd', .. }, true) => {
+            let inventory_index = inventory_menu(
+                inventory,
+                "Press the key next to an item to drop it, or any other key to cancel\n",
+                &mut tcod.root);
+            if let Some(inventory_index) = inventory_index {
+                drop_item(inventory_index, inventory, objects, messages);
+            }
+            DidntTakeTurn
+        }
+
         //Exit
         (Key { code: Escape, .. }, _) => Exit,
 
@@ -510,7 +522,7 @@ fn place_objects(room: Rect, objects: &mut Vec<Object>, map: &Map) {
                 object
             } else {
                 let mut object = Object::new(x, y, '#', "scroll of confusedion",
-                                             colors::LIGHT_YELLOW, false);
+                                             colors::LIGHT_PURPLE, false);
                 object.item = Some(Item::Confuse);
                 object
             };
@@ -821,6 +833,17 @@ fn cast_confuse(_inventory_id: usize, objects: &mut [Object], messages: &mut Mes
     }
 }
 
+fn drop_item(inventory_id: usize,
+             inventory: &mut Vec<Object>,
+             objects: &mut Vec<Object>,
+             messages: &mut Messages)
+{
+    let mut item = inventory.remove(inventory_id);
+    item.set_pos(objects[PLAYER].x, objects[PLAYER].y);
+    message(messages, format!("You dropped a {}.", item.name),
+    colors::YELLOW);
+    objects.push(item);
+}
 
 fn main() {
     let root = Root::initializer()
