@@ -919,6 +919,24 @@ fn target_tile(tcod: &mut Tcod, objects: &[Object],
 
 }
 
+fn target_monster(tcod: &mut Tcod, objects: &[Object],
+                    map: &mut Map, messages: &Messages,
+                    max_range: Option<f32>) -> Option<(usize)>
+{
+    loop {
+        match target_tile(tcod, objects, map, messages, max_range) {
+            Some((x, y)) => {
+                for (id, obj) in objects.iter().enumerate() {
+                    if obj.pos() == (x, y) && obj.fighter.is_some() && id!= PLAYER {
+                        return Some(id)
+                    }
+                }
+            }
+            None => return None,
+        }
+    }
+}
+
 fn main() {
     let root = Root::initializer()
         .font("static/arial10x10.png", FontLayout::Tcod)
