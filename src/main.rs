@@ -49,6 +49,9 @@ const LIGHTNING_RANGE: i32 = 5;
 const CONFUSE_NUM_TURNS: i32 = 10;
 const CONFUSE_RANGE: i32 = 8;
 
+const FIREBALL_DAMAGE: i32 = 12;
+const FIREBALL_RADIUS: i32 = 3;
+
 const ROOM_MAX_SIZE: i32 = 10;
 const ROOM_MIN_SIZE: i32 = 6;
 const MAX_ROOMS: i32 = 30;
@@ -254,6 +257,7 @@ enum Item {
     Heal,
     Lightning,
     Confuse,
+    Fireball,
 }
 
 enum UseResult {
@@ -520,14 +524,18 @@ fn place_objects(room: Rect, objects: &mut Vec<Object>, map: &Map) {
                 let mut object = Object::new(x, y, '!', "healing potion", colors::VIOLET, false);
                 object.item = Some(Item::Heal);
                 object
-            } else if dice < 0.7 + 0.15 {
+            } else if dice < 0.7 + 0.10 {
                 let mut object = Object::new(x, y, '#', "scroll of lightning", colors::LIGHT_YELLOW, false);
                 object.item = Some(Item::Lightning);
                 object
-            } else {
+            } else if dice < 0.7 + 0.10 {
                 let mut object = Object::new(x, y, '#', "scroll of confusedion",
                                              colors::LIGHT_PURPLE, false);
                 object.item = Some(Item::Confuse);
+                object
+            } else {
+                let mut object = Object::new(x, y, '#', "scroll of fireball", colors::LIGHT_ORANGE, false);
+                object.item = Some(Item::Fireball);
                 object
             };
             objects.push(item);
@@ -765,6 +773,7 @@ fn use_item(inventory_id: usize, inventory: &mut Vec<Object>,
             Heal => cast_heal,
             Lightning => cast_lightning,
             Confuse => cast_confuse,
+            Fireball => cast_fireball,
         };
         match on_use(inventory_id, objects, messages, map, tcod) {
             UseResult::UsedUp => {
@@ -835,6 +844,34 @@ fn cast_confuse(_inventory_id: usize, objects: &mut [Object], messages: &mut Mes
         message(messages, "No enemey within range...", colors::RED);
         UseResult::Cancelled
     }
+}
+
+fn cast_fireball(_inventory_id: usize, objects: &mut [Object], messages: &mut Messages,
+                  map: &mut Map, tcod: &mut Tcod)
+                  -> UseResult
+{
+    message(messages,
+            "Left click a tile to target with fireball, or right click to cancel",
+            colors::LIGHTER_CRIMSON);
+    let (x, y) = match target_tile(tcod, objects, map, messages, None) {
+        Some(tile_pos) => tile_pos,
+        None => return UseResult::Cancelled,
+    };
+    message(messages,
+            format!("The fireball burns everything within {} tiles!",
+                    FIREBALL_RADIUS),
+            colors::ORANGE);
+
+    for obj in objects {
+        if obj.distance(x, y) <= FIREBALL_RADIUS as f32 && obj.fighter.is_some() {
+            message(messages,
+                    format!("The {} is burned by the fireball, taking {} damage.",
+                            obj.name, FIREBALL_DAMAGE),
+                    colors::ORANGE);
+            obj.take_damage(FIREBALL_DAMAGE, messages);
+        }
+    }
+    UseResult::UsedUp
 }
 
 fn drop_item(inventory_id: usize,
