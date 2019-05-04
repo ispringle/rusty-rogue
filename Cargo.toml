@@ -1,6 +1,6 @@
 [package]
 name = "rusty-rogue"
-version = "0.1.0"
+version = "0.7.0"
 authors = ["Ian S Pringle <ipringle@protonmail.com>"]
 edition = "2018"
 
