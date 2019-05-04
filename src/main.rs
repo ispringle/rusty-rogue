@@ -49,6 +49,9 @@ const LIGHTNING_RANGE: i32 = 5;
 const CONFUSE_NUM_TURNS: i32 = 10;
 const CONFUSE_RANGE: i32 = 8;
 
+const FIREBALL_DAMAGE: i32 = 12;
+const FIREBALL_RADIUS: i32 = 3;
+
 const ROOM_MAX_SIZE: i32 = 10;
 const ROOM_MIN_SIZE: i32 = 6;
 const MAX_ROOMS: i32 = 30;
@@ -204,6 +207,10 @@ impl Object {
             }
         }
     }
+
+    pub fn distance(&self, x: i32, y: i32) -> f32 {
+        (((x - self.x).pow(2) + (y - self.y).pow(2)) as f32).sqrt()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -250,6 +257,7 @@ enum Item {
     Heal,
     Lightning,
     Confuse,
+    Fireball,
 }
 
 enum UseResult {
@@ -461,6 +469,18 @@ fn handle_keys(key: Key, tcod: &mut Tcod, objects: &mut Vec<Object>,
             DidntTakeTurn
         }
 
+        //drop item
+        (Key { printable: 'd', .. }, true) => {
+            let inventory_index = inventory_menu(
+                inventory,
+                "Press the key next to an item to drop it, or any other key to cancel\n",
+                &mut tcod.root);
+            if let Some(inventory_index) = inventory_index {
+                drop_item(inventory_index, inventory, objects, messages);
+            }
+            DidntTakeTurn
+        }
+
         //Exit
         (Key { code: Escape, .. }, _) => Exit,
 
@@ -504,14 +524,18 @@ fn place_objects(room: Rect, objects: &mut Vec<Object>, map: &Map) {
                 let mut object = Object::new(x, y, '!', "healing potion", colors::VIOLET, false);
                 object.item = Some(Item::Heal);
                 object
-            } else if dice < 0.7 + 0.15 {
+            } else if dice < 0.7 + 0.10 {
                 let mut object = Object::new(x, y, '#', "scroll of lightning", colors::LIGHT_YELLOW, false);
                 object.item = Some(Item::Lightning);
                 object
-            } else {
-                let mut object = Object::new(x, y, '#', "scroll of confusedion",
-                                             colors::LIGHT_YELLOW, false);
+            } else if dice < 0.7 + 0.10 + 0.10 {
+                let mut object = Object::new(x, y, '#', "scroll of confusion",
+                                             colors::LIGHT_PURPLE, false);
                 object.item = Some(Item::Confuse);
+                object
+            } else {
+                let mut object = Object::new(x, y, '#', "scroll of fireball", colors::LIGHT_ORANGE, false);
+                object.item = Some(Item::Fireball);
                 object
             };
             objects.push(item);
@@ -749,6 +773,7 @@ fn use_item(inventory_id: usize, inventory: &mut Vec<Object>,
             Heal => cast_heal,
             Lightning => cast_lightning,
             Confuse => cast_confuse,
+            Fireball => cast_fireball,
         };
         match on_use(inventory_id, objects, messages, map, tcod) {
             UseResult::UsedUp => {
@@ -801,10 +826,12 @@ fn cast_lightning(_inventory_id: usize, objects: &mut [Object], messages: &mut M
 }
 
 fn cast_confuse(_inventory_id: usize, objects: &mut [Object], messages: &mut Messages,
-                  _map: &mut Map, tcod: &mut Tcod)
+                  map: &mut Map, tcod: &mut Tcod)
                   -> UseResult
 {
-    let monster_id = closest_monster(CONFUSE_RANGE, objects, tcod);
+    message(messages, "Left-click a monster to confuse it, or right-click to cancel.",
+            colors::LIGHT_CYAN);
+    let monster_id = target_monster(tcod, objects, map, messages, Some(CONFUSE_RANGE as f32));
     if let Some(monster_id) = monster_id {
         let old_ai = objects[monster_id].ai.take().unwrap_or(Ai::Basic);
         objects[monster_id].ai = Some(Ai::Confused {
@@ -812,7 +839,7 @@ fn cast_confuse(_inventory_id: usize, objects: &mut [Object], messages: &mut Mes
             num_turns: CONFUSE_NUM_TURNS,
         });
         message(messages,
-                format!("The {} is no confused!", objects[monster_id].name),
+                format!("The {} is now confused!", objects[monster_id].name),
                 colors::LIGHT_GREEN);
         UseResult::UsedUp
     } else {
@@ -821,6 +848,96 @@ fn cast_confuse(_inventory_id: usize, objects: &mut [Object], messages: &mut Mes
     }
 }
 
+fn cast_fireball(_inventory_id: usize, objects: &mut [Object], messages: &mut Messages,
+                  map: &mut Map, tcod: &mut Tcod)
+                  -> UseResult
+{
+    message(messages,
+            "Left click a tile to target with fireball, or right click to cancel",
+            colors::LIGHTER_CRIMSON);
+    let (x, y) = match target_tile(tcod, objects, map, messages, None) {
+        Some(tile_pos) => tile_pos,
+        None => return UseResult::Cancelled,
+    };
+    message(messages,
+            format!("The fireball burns everything within {} tiles!",
+                    FIREBALL_RADIUS),
+            colors::ORANGE);
+
+    for obj in objects {
+        if obj.distance(x, y) <= FIREBALL_RADIUS as f32 && obj.fighter.is_some() {
+            message(messages,
+                    format!("The {} is burned by the fireball, taking {} damage.",
+                            obj.name, FIREBALL_DAMAGE),
+                    colors::ORANGE);
+            obj.take_damage(FIREBALL_DAMAGE, messages);
+        }
+    }
+    UseResult::UsedUp
+}
+
+fn drop_item(inventory_id: usize,
+             inventory: &mut Vec<Object>,
+             objects: &mut Vec<Object>,
+             messages: &mut Messages)
+{
+    let mut item = inventory.remove(inventory_id);
+    item.set_pos(objects[PLAYER].x, objects[PLAYER].y);
+    message(messages, format!("You dropped a {}.", item.name),
+    colors::YELLOW);
+    objects.push(item);
+}
+
+fn target_tile(tcod: &mut Tcod, objects: &[Object],
+               map: &mut Map, messages: &Messages,
+               max_range: Option<f32>) -> Option<(i32, i32)>
+{
+    use tcod::input::KeyCode::Escape;
+    loop {
+        tcod.root.flush();
+        let event = input::check_for_event(input::KEY_PRESS | input::MOUSE)
+            .map(|e| e.1);
+        let mut key = None;
+        match event {
+            Some(Event::Mouse(m)) => tcod.mouse = m,
+            Some(Event::Key(k)) => key = Some(k),
+            None => {}
+        }
+        render_all(tcod, objects, map, messages, false);
+        let (x, y) = (tcod.mouse.cx as i32, tcod.mouse.cy as i32);
+
+        let in_fov = (x < MAP_WIDTH) && (y < MAP_HEIGHT) && tcod.fov.is_in_fov(x, y);
+        let in_range = max_range.map_or(
+            true, |range| objects[PLAYER].distance(x, y) <= range);
+        if tcod.mouse.lbutton_pressed && in_fov && in_range {
+            return Some((x, y))
+        }
+
+        let escape = key.map_or(false, |k| k.code == Escape);
+        if tcod.mouse.rbutton_pressed || escape {
+            return None
+        }
+    }
+
+}
+
+fn target_monster(tcod: &mut Tcod, objects: &[Object],
+                    map: &mut Map, messages: &Messages,
+                    max_range: Option<f32>) -> Option<(usize)>
+{
+    loop {
+        match target_tile(tcod, objects, map, messages, max_range) {
+            Some((x, y)) => {
+                for (id, obj) in objects.iter().enumerate() {
+                    if obj.pos() == (x, y) && obj.fighter.is_some() && id!= PLAYER {
+                        return Some(id)
+                    }
+                }
+            }
+            None => return None,
+        }
+    }
+}
 
 fn main() {
     let root = Root::initializer()
